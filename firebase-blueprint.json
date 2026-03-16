@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user-specific settings and profile information.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "courses": { "type": "array", "items": { "type": "string" } },
+        "studyPlace": { "type": "string" },
+        "age": { "type": "number" },
+        "studyProgress": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "isBanned": { "type": "boolean" }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Represents a connection between two users.",
+      "type": "object",
+      "properties": {
+        "users": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "requesterId": { "type": "string" }
+      },
+      "required": ["users", "status", "createdAt", "requesterId"]
+    },
+    "StudySession": {
+      "title": "Study Session",
+      "description": "Represents a scheduled study block.",
+      "type": "object",
+      "properties": {
+        "subject": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["planned", "completed", "skipped"] },
+        "noteId": { "type": "string" }
+      },
+      "required": ["subject", "startTime", "endTime", "status"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "An interactive study note.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "subject": { "type": "string" },
+        "lastModified": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["document", "canvas"] },
+        "sharedWith": { "type": "array", "items": { "type": "string" } },
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" }
+      },
+      "required": ["title", "lastModified", "type", "ownerId"]
+    },
+    "CanvasElement": {
+      "title": "Canvas Element",
+      "description": "A draggable element on a note canvas.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["text", "sticky", "rect", "circle"] },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "text": { "type": "string" },
+        "color": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" }
+      },
+      "required": ["type", "x", "y"]
+    },
+    "PublicResource": {
+      "title": "Public Resource",
+      "description": "A study resource shared with the community.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["note", "video"] },
+        "url": { "type": "string" },
+        "content": { "type": "string" },
+        "subject": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likes": { "type": "number" },
+        "views": { "type": "number" }
+      },
+      "required": ["title", "type", "subject", "authorId", "authorName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/public_resources/{resourceId}": {
+      "schema": "PublicResource",
+      "description": "Community shared study materials."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Core user profile data."
+    },
+    "/users/{userId}/sessions/{sessionId}": {
+      "schema": "StudySession",
+      "description": "User's scheduled study sessions."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": "Note",
+      "description": "User's study notes."
+    },
+    "/users/{userId}/notes/{noteId}/elements/{elementId}": {
+      "schema": "CanvasElement",
+      "description": "Elements within a canvas note."
+    },
+    "/friendships/{friendshipId}": {
+      "schema": "Friendship",
+      "description": "Connections between users."
+    },
+    "/users_public/{userId}": {
+      "schema": "UserProfile",
+      "description": "Publicly searchable user profiles."
+    },
+    "/usernames/{username}": {
+      "schema": { "type": "object", "properties": { "uid": { "type": "string" } } },
+      "description": "Used to ensure username uniqueness."
+    }
+  }
+}

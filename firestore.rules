@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - createdAt: string (required, ISO 8601)
+    //
+    // Collection: users/{userId}/sessions
+    // Document ID: {sessionId}
+    // Fields:
+    //   - subject: string (required)
+    //   - startTime: string (required, ISO 8601)
+    //   - endTime: string (required, ISO 8601)
+    //   - status: string (required, ['planned', 'completed', 'skipped'])
+    //   - noteId: string (optional)
+    //
+    // Collection: users/{userId}/notes
+    // Document ID: {noteId}
+    // Fields:
+    //   - title: string (required)
+    //   - content: string (required)
+    //   - subject: string (optional)
+    //   - lastModified: string (required, ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "soojiaquan@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isBanned() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBanned == true;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId && !isBanned();
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['email', 'createdAt']) &&
+             isValidEmail(data.email) &&
+             isValidDateString(data.createdAt) &&
+             (!('username' in data) || (data.username is string && data.username.matches("^[a-zA-Z0-9_]{3,20}$"))) &&
+             (!('courses' in data) || data.courses is list) &&
+             (!('studyPlace' in data) || data.studyPlace is string) &&
+             (!('age' in data) || data.age is number) &&
+             (!('studyProgress' in data) || data.studyProgress is string);
+    }
+
+    function isValidStudySession(data) {
+      return data.keys().hasAll(['subject', 'startTime', 'endTime', 'status']) &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() < 100 &&
+             isValidDateString(data.startTime) &&
+             isValidDateString(data.endTime) &&
+             data.status in ['planned', 'completed', 'skipped'];
+    }
+
+    function isValidNote(data) {
+      return data.keys().hasAll(['title', 'lastModified', 'type', 'ownerId']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             isValidDateString(data.lastModified) &&
+             data.type in ['document', 'canvas'] &&
+             data.ownerId is string;
+    }
+
+    function isValidFriendship(data) {
+      return data.keys().hasAll(['users', 'status', 'createdAt', 'requesterId']) &&
+             data.users is list && data.users.size() == 2 &&
+             data.status in ['pending', 'accepted'] &&
+             isValidDateString(data.createdAt) &&
+             data.requesterId is string;
+    }
+
+    function isValidPublicResource(data) {
+      return data.keys().hasAll(['title', 'type', 'subject', 'authorId', 'authorName', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.type in ['note', 'video'] &&
+             data.subject is string &&
+             data.authorId is string &&
+             isValidDateString(data.createdAt);
+    }
+
+    match /public_resources/{resourceId} {
+      allow read: if isAuthenticated() && !isBanned();
+      allow create: if isAuthenticated() && !isBanned() && request.resource.data.authorId == request.auth.uid && isValidPublicResource(request.resource.data);
+      allow update: if isAuthenticated() && !isBanned() && (resource.data.authorId == request.auth.uid || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'views']) || isAdmin());
+      allow delete: if isAuthenticated() && !isBanned() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    match /usernames/{username} {
+      allow read: if isAuthenticated() && !isBanned();
+      allow create: if isAuthenticated() && !isBanned() &&
+                    request.resource.data.uid == request.auth.uid &&
+                    username.matches("^[a-zA-Z0-9_]{3,20}$");
+      allow delete: if isAuthenticated() && !isBanned() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /users_public/{userId} {
+      allow read: if isAuthenticated() && !isBanned();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.users);
+      allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.users) && isValidFriendship(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid in resource.data.users) && isValidFriendship(request.resource.data);
+      allow delete: if isAuthenticated() && (request.auth.uid in resource.data.users);
+    }
+
+    function isValidCanvasElement(data) {
+      return data.keys().hasAll(['type', 'x', 'y']) &&
+             data.type in ['text', 'sticky', 'rect', 'circle'] &&
+             data.x is number && data.y is number;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUserProfile(request.resource.data);
+
+      match /sessions/{sessionId} {
+        allow read: if (isAuthenticated() && !isBanned()) || isAdmin();
+        allow create: if isOwner(userId) && isValidStudySession(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidStudySession(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /notes/{noteId} {
+        allow read: if isOwner(userId) || (isAuthenticated() && !isBanned() && ('sharedWith' in resource.data) && (request.auth.uid in resource.data.sharedWith)) || isAdmin();
+        allow create: if isOwner(userId) && isValidNote(request.resource.data);
+        allow update: if (isOwner(userId) || (isAuthenticated() && !isBanned() && ('sharedWith' in resource.data) && (request.auth.uid in resource.data.sharedWith)) || isAdmin()) && isValidNote(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+
+        match /elements/{elementId} {
+          allow read: if isOwner(userId) || (isAuthenticated() && !isBanned() && get(/databases/$(database)/documents/users/$(userId)/notes/$(noteId)).data.sharedWith.hasAny([request.auth.uid])) || isAdmin();
+          allow create: if (isOwner(userId) || (isAuthenticated() && !isBanned() && get(/databases/$(database)/documents/users/$(userId)/notes/$(noteId)).data.sharedWith.hasAny([request.auth.uid]))) && isValidCanvasElement(request.resource.data);
+          allow update: if (isOwner(userId) || (isAuthenticated() && !isBanned() && get(/databases/$(database)/documents/users/$(userId)/notes/$(noteId)).data.sharedWith.hasAny([request.auth.uid])) || isAdmin()) && isValidCanvasElement(request.resource.data);
+          allow delete: if isOwner(userId) || (isAuthenticated() && !isBanned() && get(/databases/$(database)/documents/users/$(userId)/notes/$(noteId)).data.sharedWith.hasAny([request.auth.uid])) || isAdmin();
+        }
+      }
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
